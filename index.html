@@ -31,12 +31,11 @@
     .role-title{font-weight:700; letter-spacing:.3px}
 
     .row {
-    display: grid;
-    /* widened first column, added a bit more space before multiplier */
-    grid-template-columns: 2.5fr 1.6fr 0fr 1.1fr 1.1fr;
-    gap: 12px; /* slightly more breathing room */
-    padding: 8px 12px;
-    align-items: center;
+      display: grid;
+      grid-template-columns: 2.5fr 1.6fr 0fr 1.1fr 1.1fr;
+      gap: 12px;
+      padding: 8px 12px;
+      align-items: center;
     }
     .row.head{color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em}
     .row:nth-child(odd){background:rgba(255,255,255,.02)}
@@ -56,27 +55,27 @@
     .hint{font-size:12px; color:var(--muted)}
 
     .footer {
-    padding: 24px;
-    color: var(--muted);
-    text-align: center;
-    font-size: 14px;
-    border-top: 1px solid #2a3160;
-    margin-top: 30px;
+      padding: 24px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 14px;
+      border-top: 1px solid #2a3160;
+      margin-top: 30px;
     }
 
     .footer a {
-    color: var(--accent);
-    font-weight: 600;
-    text-decoration: none;
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
     }
 
     .footer a:hover {
-    text-decoration: underline;
-    color: #9fb6ff;
+      text-decoration: underline;
+      color: #9fb6ff;
     }
 
     .footer p {
-    margin: 8px 0;
+      margin: 8px 0;
     }
 
     a{color:#9fb6ff}
@@ -102,16 +101,16 @@
     </div>
 
     <div class="footer">
-    <p>
-        Huge thanks to <b>Maroomm</b> for his excellent guide:<br>
-        <a href="https://www.reddit.com/r/DotA2/comments/1mx8hfa/fantasy_league_guide_2025_road_to_the" target="_blank">
-        Fantasy League Guide 2025 – Road to The International
-        </a>
-    </p>
-    <p>
-        Built and maintained by <b>denshust</b> · 
-        <a href="https://buymeacoffee.com/denshust" target="_blank">☕ Buy me a coffee</a>
-    </p>
+      <p>
+          Huge thanks to <b>Maroomm</b> for his excellent guide:<br>
+          <a href="https://www.reddit.com/r/DotA2/comments/1mx8hfa/fantasy_league_guide_2025_road_to_the" target="_blank">
+          Fantasy League Guide 2025 – Road to The International
+          </a>
+      </p>
+      <p>
+          Built and maintained by <b>denshust</b> · 
+          <a href="https://buymeacoffee.com/denshust" target="_blank">☕ Buy me a coffee</a>
+      </p>
     </div>
 
   </div>
@@ -153,7 +152,7 @@
         this.roleName = roleName;
         this.root = root;
         this.data = parseCSV(csvData);
-        this.state = { player:null, metrics:[null,null,null], multipliers:[100,100,100] };
+        this.state = { player:null, metrics:[null,null,null], multipliers:[100,100,100], prefix:null, prefixBonus:0 };
         this.build();
         this.afterLoad();
       }
@@ -186,11 +185,30 @@
         this.sumAvgEl = this.card.querySelector('[data-sum-avg]');
         this.sumMaxEl = this.card.querySelector('[data-sum-max]');
 
-        // Create 3 metric rows based on config
+        // Metric rows
         this.metricRows = roleConfig[this.roleName].map((color, idx)=>this.createMetricRow(idx, color));
 
         this.playerSel = this.card.querySelector('.playerSel');
-        this.playerSel.addEventListener('change', ()=>{ this.state.player = this.playerSel.value; this.update(); });
+        this.playerSel.addEventListener('change', ()=>{ 
+          this.state.player = this.playerSel.value; 
+          this.populatePrefixes(); 
+          this.update(); 
+        });
+
+        // Prefix row
+        this.prefixRow = document.createElement('div');
+        this.prefixRow.className = 'row';
+        this.prefixRow.innerHTML = `
+          <select class="prefixSel"><option value="" disabled selected>Choose prefix…</option></select>
+          <input class="prefixBonus" type="number" step="1" value="0" min="0"/>%
+          <div></div><div></div><div></div>
+        `;
+        this.card.appendChild(this.prefixRow);
+        this.prefixSel = this.prefixRow.querySelector('.prefixSel');
+        this.prefixBonusInput = this.prefixRow.querySelector('.prefixBonus');
+
+        this.prefixSel.addEventListener('change', ()=>{ this.state.prefix = this.prefixSel.value; this.update(); });
+        this.prefixBonusInput.addEventListener('input', ()=>{ this.state.prefixBonus = parseFloat(this.prefixBonusInput.value)||0; this.update(); });
       }
 
       createMetricRow(idx, color){
@@ -216,11 +234,16 @@
       afterLoad(){
         const players = this.data.rows.map(r=>r[0]);
         this.playerSel.innerHTML = '<option value="" disabled selected>Choose player…</option>' + players.map(p=>`<option>${p}</option>`).join('');
-        const metricNames = this.data.headers.slice(1);
         this.metricRows.forEach(mr=>{
-          const allowed = metricGroups[mr.color].filter(m=>metricNames.includes(m));
+          const allowed = metricGroups[mr.color].filter(m=>this.data.headers.includes(m));
           mr.metricSel.innerHTML = '<option value="" disabled selected>Choose metric…</option>' + allowed.map(m=>`<option>${m}</option>`).join('');
         });
+      }
+
+      populatePrefixes(){
+        if(!this.state.player || !prefixData[this.state.player]) return;
+        const options = Object.keys(prefixData[this.state.player]).map(p=>`<option>${p}</option>`).join('');
+        this.prefixSel.innerHTML = '<option value="" disabled selected>Choose prefix…</option>' + options;
       }
 
       getCell(player, metric){
@@ -243,13 +266,25 @@
           mr.avgEl.textContent = fmt(rAvg);
           mr.maxEl.textContent = fmt(rMax);
         }
-        this.sumAvgEl.textContent = fmt(sumAvg);
-        this.sumMaxEl.textContent = fmt(sumMax);
-        document.dispatchEvent(new CustomEvent('role:updated', {detail:{role:this.roleName, sumAvg, sumMax}}));
+
+        // Apply prefix
+        let realBonus = 0;
+        if(this.state.player && this.state.prefix && prefixData[this.state.player]){
+          const chance = prefixData[this.state.player][this.state.prefix] || 0;
+          const bonus = this.state.prefixBonus || 0;
+          realBonus = (chance/100)*(bonus/100);
+        }
+
+        const sumAvgReal = sumAvg*(1+realBonus);
+        const sumMaxReal = sumMax*(1+realBonus);
+        this.sumAvgEl.textContent = fmt(sumAvgReal);
+        this.sumMaxEl.textContent = fmt(sumMaxReal);
+
+        document.dispatchEvent(new CustomEvent('role:updated', {detail:{role:this.roleName, sumAvg:sumAvgReal, sumMax:sumMaxReal}}));
       }
     }
 
-   // --- Demo CSVs for Core, Mid, Support (replace with your own) ---
+// --- Demo CSVs for Core, Mid, Support (replace with your own) ---
     const coreCSV = `Player,GPM,Deaths,Creeps,Shards,Kills,Towers,Teamfight,Stuns,Tormentor,Roshan,First Blood,Courier
 Yatoro,1590/1981,1195/1800,1605/3038,602/912,1172/2622,1097/2609,1275/1748,464/1705,908/1983,695/1983,193/1700,386/1983
 Akashi,1403/1586,1260/1620,1268/1683,566/665,835/1291,850/1813,1376/1613,1185/2850,340/850,510/1417,340/1133,255/850
@@ -309,7 +344,80 @@ Dukalis,1312/1772,484/1987,294/1700,124/850,93/1700,108/1133,1107/2448,522/1700,
 panto,1276/1684,960/3359,541/2550,0/0,340/1700,93/850,976/1959,661/2153,267/1349,145/1170,275/847,978/2075
 planet,1291/1708,1402/3907,305/1417,64/850,128/1700,449/2550,518/1055,690/1983,643/2130,112/1008,324/1089,671/1415`;
 
-    
+    // --- Prefix CSV ---
+    const prefixCSV = `Yatoro,Dashing(68%),Virtuoso(34%),Emerald(35%),Crimson(23%),Otherwordly(20%),Brawny(16%),Hirsute(16%)
+Akashi,Dashing(60%),Brawny(40%),Celurean(20%),Virtuoso(20%),Otherwordly(20%)
+Satanic,Dashing(65%),Otherwordly(42%),Virtuoso(35%),Elemental(24%),Hirsute(24%),Bestial(24%)
+Yuma,Dashing(51%),Virtuoso(39%),Otherwordly(30%),Elemental(27%),Hirsute(27%),Crimson(27%)
+Nightfall,Coveted(93%),Brawny(45%),Dashing(33%),Cerulean(24%)Otherwordly(24%),Balanced(22%)
+shiro,Dashing(64%),Otherwordly(30%),Virtuoso(28%),Bestial(23%),Emerald(21%),Cerulean(15%)
+skiter,Brawny(52%),Dashing(26%),Emerald(26%),Hirsute(26%),Balanced(22%),Virtuoso(19%)
+Ghost,Dashing(77%),Elemental(32%),Virtuoso(32%),Otherwordly(23%),Emerald(21%),Crimson(21%)
+miCKe,Dashing(47%),Emerald(24%),Brawny(24%),Otherwordly(24%),Hirsute(24%),Balanced(24%)
+watson,Dashing(62%),Otherwordly(36%),Virtuoso(34%),Bestial(30%),Hirsute(25%),Crimson(21%),Elemental(20%),Balanced(20%)
+Pure,Dashing(45%),Emerald(33%),Hirsute(33%),Brawny(26%),Otherwordly(24%)
+gotthejuice,Dashing(58%),Otherwordly(37%),Brawny(26%),Bestial(26%),Elemental(21%),Cerulean(21%)
+JaCkky,Brawny(46%),Dashing(43%),Elemental(25%),Cerulean(25%),Virtuoso(25%),Otherwordly(18%)
+Wisper,Hirsute(70%),Coveted(32%),Brawny(46%),Crimson(38%),Balanced(27%),Canny(27%),Elemental(24%)
+Ame,Dashing(62%),Sacrificial(58%),Virtuoso(38%),Otherwordly(30%),Hirsute(26%)
+Crystallis,Dashing(43%),Brawny(39%),Hirsute(24%),Elemental(19%),Otherwordly(19%)
+bzm,Virtuoso(72%),Canny(48%),Otherwordly(39%),Bestial(37%),Crimson(34%),Elemental(31%),Hirsute(30%)
+kiyotaka,Sacrificial(56%),Otherwordly(50%),Canny(46%),Bestial(41%),Dashing(35%),Cerulean(35%)
+4nalog,Hirsute(51%),Sacrificial(49%),Virtuoso(43%),Dashing(38%),Otherwordly(35%),Bestial(32%),Crimson(30%)
+Larl,Otherwordly(62%),Dashing(43%),Hirsute(38%),Canny(38%),Crimson(36%),Sacrificial(36%),Elemental(31%)
+Mac,Balanced(60%),Sacrificial(50%),Otherwordly(40%),Crimson(30%),Elemental(20%),Virtuoso(20%)
+Marl1ne,Virtuoso(74%),Crimson(52%),Hirsute(44%),Bestial(41%),Brawny(30%)
+gpk,Otherwordly(45%),Canny(39%),Elemental(35%),Cerualean(33%),Hirsute(33%),Bestial(33%)
+Nisha,Otherwordly(59%),Sacrificial(41%),Hirsute(39%),Crimson(35%),Canny(33%),Dashing(29%),Bestial(29%),Elemental(27%),Cerulean(25%)
+No[o]ne,Virtuoso(55%),Otherwordly(51%),Canny(42%),Bestial(40%),Cerulean(35%),Hirsute(33%),Crimson(31%)
+Niku,Sacrificial(63%),Virtuoso(53%),Brawny(53%),Cerulean(26%),Dashing(21%),Otherwordly(21%)
+RCY,Hirsute(41%),Otherwordly(38%),Canny(38%),Coveted(33%),Cerulean(28%),Bestial(28%),Brawny(26%)
+Quinn,Virtuoso(87%),Canny(49%),Otherwordly(44%),Bestial(43%),Cerulean(34%),Hirsute(34%),Dashing(33%)
+NothingToSay,Hirsute(57%),Virtuoso(36%),Crimson(34%),Canny(34%),Otherwordly(32%),Brawny(26%),Bestial(26%)
+SumaiL,Hirsute(49%),Sacrificial(47%),Balanced(38%),Canny(36%),Cerualean(34%),Bestial(34%),Otherwordly(32%)
+Xm,Otherwordly(51%),Hirsute(39%),Canny(41%),Virtuoso(39%),Cerulean(35%),Balanced(23%)
+Armel,Virtuoso(79%),Otherwordly(57%),Canny(43%),Bestial(39%),Crimson(32%),Elemental(29%),Hirsute(29%)
+Mira,Canny(58%),Elemental(27%),Hirsute(24%),Bestial(22%),Emerald(20%),Brawny(18%)
+KJ,Elemental(39%),Brawny(43%),Crimson(35%),Canny(32%),Bestial(30%),Coveted(16%),Sacrificial(16%)
+Scofield,Canny(51%),Brawny(41%),Hirsute(30%),Bestial(27%),Coveted(24%),Emerald(16%),Crimson(14%)
+rue,Canny(55%),Emerald(39%),Dashing(30%),Cerulean(23%),Otherwordly(23%),Elemental(20%),Hirsute(20%)
+Sneyking,Coveted(85%),Canny(59%),Elemental(44%),Bestial(37%),Emerald(33%),Otherwordly(30%),Cerulean(26%)
+Miposhka,Coveted(75%),Canny(66%),Crimson(32%),Hirsute(23%),Elemenral(20%),Balanced(20%)
+tofu,Canny(59%),Emerald(43%),Coveted(33%),Balanced(33%),Elemental(18%),Bestial(18%)
+XinQ,Canny(55%),Emerald(30%),Hirsute(30%),Brawny(27%),Bestial(25%),Coveted(18%)
+Boxi,Canny(41%),Balanced(39%),Emerald(35%),Elemental(29%),Coveted(24%),Bestial(22%)
+Tims,Brawny(36%),Elemental(29%),Canny(29%),Dashing(25%),Hirsute(25%),Crimson(25%),Sacrificial(21%)
+OmaR,Canny(51%),Balanced(36%),Elemental(30%),Bestial(28%),Crimson(26%),Elemrald(23%)
+Bignum,Elemental(38%),Canny(33%),Balanced(31%),Brawny(28%),Hirsute(28%),Sacrificial(21%),
+Whitemon,Canny(66%),Emerald(31%),Sacrificial(25%),Hirsute(24%),Crisom(21%),Virtuoso(19%)
+9Class,Canny(38%),Emerald(27%),Balanced(27%),Crimson(27%),Coveted(25%),Sacrificial(24%),Elemental(22%)
+Cr1t-,Canny(59%),Virtuoso(44%),Sacrificial(44%),Emerald(26%),Hirsute(26%)
+Saksa,Brawny(43%),Canny(34%),Hirsute(28%),Elemental(22%),Bestial(18%),Emerald(16%)
+Zayac,Hirsute(53%),Canny(53%),Bestial(37%),Balanced(32%),Crimson(26%),Emerald(21%)
+Erice,Virtuoso(60%),Canny(50%),Dashing(40%),Sacrificial(20%)
+Save,Canny(70%),Virtuoso(33%),Otherwordly(33%),Emerald(30%),Balanced(29%),Coveted(18%)
+GH,Brawny(55%),Bestial(36%),Elemental(34%),Coveted(32%),Hirsute(28%),Emerald(19%),Balanced(19%),Canny(19%)
+Dukalis,Canny(71%),Virtuoso(51%),Crimson(25%),Elemental(20%),Sacrificial(20%),Cerulean(18%)
+panto,Canny(60%),Elemental(35%),Crimson(35%),Balanced(33%),Hirsute(27%),Virtuoso(24%),Emerald(22%)
+planet,Canny(47%),Crimson(30%),Brawny(28%),Elemental(26%),Balanced(25%),Emerald(23%),Hirsute(23%),Bestial(21%)`;
+
+    function parsePrefixCSV(text){
+      const lines = text.trim().split(/\n/);
+      const data = {};
+      for(const line of lines){
+        const parts = line.split(',');
+        const player = parts[0];
+        data[player] = {};
+        for(let i=1;i<parts.length;i++){
+          const m = parts[i].match(/^(\w+)\((\d+)%\)$/);
+          if(m) data[player][m[1]] = parseFloat(m[2]);
+        }
+      }
+      return data;
+    }
+
+    const prefixData = parsePrefixCSV(prefixCSV);
+
     // --- App setup ---
     const roleGrid = document.getElementById('roleGrid');
     const sections = [
@@ -328,7 +436,8 @@ planet,1291/1708,1402/3907,305/1417,64/850,128/1700,449/2550,518/1055,690/1983,6
       if(grand[role]){ grand[role].a = sumAvg; grand[role].m = sumMax; }
       const totAvg = Object.values(grand).reduce((t,o)=>t+o.a,0);
       const totMax = Object.values(grand).reduce((t,o)=>t+o.m,0);
-      gtAvg.textContent = fmt(totAvg); gtMax.textContent = fmt(totMax);
+      gtAvg.textContent = fmt(totAvg);
+      gtMax.textContent = fmt(totMax);
       gtWrap.hidden = false;
     });
   </script>
