@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dota2 Calculator (Core / Mid / Support)</title>
+  <style>
+    :root{
+      --bg:#0f1222; --card:#161a31; --card2:#1b2040; --text:#e9ecf8; --muted:#a9b0c7; --accent:#7aa2ff; --green:#6be4a7; --red:#ff7a95; --blue:#7ad1ff;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background: radial-gradient(1200px 800px at 0% 0%, #121636 0, #0f1222 40%, #0f1222 100%);
+      color:var(--text); line-height:1.45;
+    }
+    header{
+      padding:24px; display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+      border-bottom:1px solid #24294d;
+    }
+    h1{font-size:24px; margin:0; font-weight:800; letter-spacing:0.3px}
+    .sub{color:var(--muted); font-size:14px}
+    .container{max-width:1200px; margin:0 auto; padding:20px;}
+
+    .role-grid{display:grid; grid-template-columns:repeat(3,minmax(280px,1fr)); gap:18px;}
+    @media (max-width: 1050px){ .role-grid{grid-template-columns:1fr} }
+
+    .card{background:linear-gradient(180deg, var(--card), var(--card2)); border:1px solid #22284a; border-radius:16px; box-shadow:0 20px 40px rgba(0,0,0,.35);}
+    .card-header{padding:14px 16px; border-bottom:1px solid #22284a; display:flex; align-items:center; justify-content:space-between; gap:10px}
+    .role-title{font-weight:700; letter-spacing:.3px}
+
+    .row{display:grid; grid-template-columns: 1.1fr 1.05fr 0.7fr 1.1fr 1.1fr; gap:10px; padding:8px 12px; align-items:center}
+    .row.head{color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em}
+    .row:nth-child(odd){background:rgba(255,255,255,.02)}
+
+    select, input[type=number]{
+      appearance:none; width:100%; padding:10px 12px; border-radius:10px; border:1px solid #2a3160; background:#0e1230; color:var(--text);
+      outline:none; font-size:14px; transition:border .2s ease, box-shadow .2s ease;
+    }
+    select:focus, input[type=number]:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(122,162,255,.2)}
+
+    .sum{padding:10px 12px; display:flex; justify-content:flex-end; gap:18px; border-top:1px dashed #2a3160; color:var(--accent); font-weight:700}
+    .sum .label{color:var(--muted); font-weight:600}
+
+    .grand-total{margin-top:20px; padding:16px; display:flex; gap:22px; justify-content:flex-end; align-items:center; background:#12163a; border:1px solid #2a3160; border-radius:14px}
+    .badge{padding:6px 10px; border-radius:999px; background:#0d132d; border:1px solid #2a3160; color:var(--muted); font-size:12px}
+    .num{font-variant-numeric:tabular-nums}
+    .hint{font-size:12px; color:var(--muted)}
+
+    .footer{padding:22px; color:var(--muted); text-align:center}
+    a{color:#9fb6ff}
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Dota2 Points Calculator</h1>
+      <div class="sub">CSV files are already included for Core, Mid, Support.</div>
+    </div>
+    <div class="badge">100% client‑side · works on GitHub Pages/Netlify</div>
+  </header>
+
+  <div class="container">
+
+    <div class="role-grid" id="roleGrid"></div>
+
+    <div class="grand-total" id="grandTotal" hidden>
+      <div class="label">Grand total:</div>
+      <div><span class="hint">Result average</span><div class="num" id="gtAvg">0</div></div>
+      <div><span class="hint">Result max</span><div class="num" id="gtMax">0</div></div>
+    </div>
+
+    <div class="footer">
+      CSV format: first column is <b>Player</b>; every other column is a metric. Cell value is <b>average/max</b> (e.g., <code>1590/1981</code>).
+    </div>
+  </div>
+
+  <script>
+    // --- Utility helpers ---
+    function parseCSV(text){
+      const lines = text.replace(/\r/g,'').trim().split(/\n+/);
+      const headers = lines[0].split(',').map(s=>s.trim());
+      const rows = lines.slice(1).map(line=>line.split(',').map(s=>s.trim()));
+      return { headers, rows };
+    }
+
+    function parseCell(cell){
+      if(!cell) return {avg:0, max:0};
+      const parts = String(cell).split('/');
+      const avg = parseFloat(parts[0].replace(/[^0-9.\-]/g,'')) || 0;
+      const mx  = parts[1] !== undefined ? (parseFloat(parts[1].replace(/[^0-9.\-]/g,'')) || 0) : 0;
+      return {avg, max:mx};
+    }
+
+    function fmt(n){ return Number(n).toLocaleString(undefined,{maximumFractionDigits:1}); }
+
+    const metricGroups = {
+      Red:["GPM","Deaths","Creeps","Shards","Kills","Towers"],
+      Green:["Teamfight","Stuns","Tormentor","Roshan","First Blood","Courier"],
+      Blue:["Wards","Stacks","Lotuses","Watchers","Runes","Smokes"]
+    };
+
+    const roleConfig = {
+      Core:["Red","Green","Red"],
+      Mid:["Red","Blue","Green"],
+      Support:["Blue","Green","Blue"]
+    };
+
+    // --- Role component ---
+    class RoleSection{
+      constructor(root, roleName, csvData){
+        this.roleName = roleName;
+        this.root = root;
+        this.data = parseCSV(csvData);
+        this.state = { player:null, metrics:[null,null,null], multipliers:[100,100,100] };
+        this.build();
+        this.afterLoad();
+      }
+
+      build(){
+        this.card = document.createElement('div');
+        this.card.className = 'card';
+        this.card.innerHTML = `
+          <div class="card-header">
+            <div class="role-title">${this.roleName}</div>
+          </div>
+          <div class="file-row">
+            <select class="playerSel"></select>
+          </div>
+          <div class="row head">
+            <div>Metric</div>
+            <div>Multiplier (%)</div>
+            <div></div>
+            <div>Result average</div>
+            <div>Result max</div>
+          </div>
+          <div class="rows"></div>
+          <div class="sum"><span class="label">Summ:</span>
+            <div>Avg <span class="num" data-sum-avg>0</span></div>
+            <div>Max <span class="num" data-sum-max>0</span></div>
+          </div>
+        `;
+        this.root.appendChild(this.card);
+        this.rowsHost = this.card.querySelector('.rows');
+        this.sumAvgEl = this.card.querySelector('[data-sum-avg]');
+        this.sumMaxEl = this.card.querySelector('[data-sum-max]');
+
+        // Create 3 metric rows based on config
+        this.metricRows = roleConfig[this.roleName].map((color, idx)=>this.createMetricRow(idx, color));
+
+        this.playerSel = this.card.querySelector('.playerSel');
+        this.playerSel.addEventListener('change', ()=>{ this.state.player = this.playerSel.value; this.update(); });
+      }
+
+      createMetricRow(idx, color){
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.innerHTML = `
+        <select class="metricSel" style="border:2px solid ${
+            color==='Red'?'var(--red)':color==='Green'?'var(--green)':'var(--blue)'
+        }"></select>
+        <input class="mult" type="number" step="10" value="100" min="0"/>
+        <div></div>
+        <div class="num" data-avg>0</div>
+        <div class="num" data-max>0</div>
+        `;
+        this.rowsHost.appendChild(row);
+        const metricSel = row.querySelector('.metricSel');
+        const multInput = row.querySelector('.mult');
+        metricSel.addEventListener('change', ()=>{ this.state.metrics[idx] = metricSel.value; this.update(); });
+        multInput.addEventListener('input', ()=>{ this.state.multipliers[idx] = parseFloat(multInput.value)||0; this.update(); });
+        return {row, metricSel, multInput, avgEl:row.querySelector('[data-avg]'), maxEl:row.querySelector('[data-max]'), color};
+      }
+
+      afterLoad(){
+        const players = this.data.rows.map(r=>r[0]);
+        this.playerSel.innerHTML = '<option value="" disabled selected>Choose player…</option>' + players.map(p=>`<option>${p}</option>`).join('');
+        const metricNames = this.data.headers.slice(1);
+        this.metricRows.forEach(mr=>{
+          const allowed = metricGroups[mr.color].filter(m=>metricNames.includes(m));
+          mr.metricSel.innerHTML = '<option value="" disabled selected>Choose metric…</option>' + allowed.map(m=>`<option>${m}</option>`).join('');
+        });
+      }
+
+      getCell(player, metric){
+        if(!this.data) return {avg:0,max:0};
+        const pIdx = this.data.rows.findIndex(r=>r[0]===player);
+        const mIdx = this.data.headers.indexOf(metric);
+        if(pIdx<0 || mIdx<0) return {avg:0,max:0};
+        return parseCell(this.data.rows[pIdx][mIdx]);
+      }
+
+      update(){
+        let sumAvg = 0, sumMax = 0;
+        for(let i=0;i<3;i++){
+          const metric = this.state.metrics[i];
+          const mult = (this.state.multipliers[i]||0)/100;
+          const {avg,max} = this.getCell(this.state.player, metric);
+          const rAvg = avg*mult, rMax = max*mult;
+          sumAvg += rAvg; sumMax += rMax;
+          const mr = this.metricRows[i];
+          mr.avgEl.textContent = fmt(rAvg);
+          mr.maxEl.textContent = fmt(rMax);
+        }
+        this.sumAvgEl.textContent = fmt(sumAvg);
+        this.sumMaxEl.textContent = fmt(sumMax);
+        document.dispatchEvent(new CustomEvent('role:updated', {detail:{role:this.roleName, sumAvg, sumMax}}));
+      }
+    }
+
+   // --- Demo CSVs for Core, Mid, Support (replace with your own) ---
+    const coreCSV = `Player,GPM,Deaths,Creeps,Shards,Kills,Towers,Teamfight,Stuns,Tormentor,Roshan,First Blood,Courier
+Yatoro,1590/1981,1195/1800,1605/3038,602/912,1172/2622,1097/2609,1275/1748,464/1705,908/1983,695/1983,193/1700,386/1983
+Akashi,1403/1586,1260/1620,1268/1683,566/665,835/1291,850/1813,1376/1613,1185/2850,340/850,510/1417,340/1133,255/850
+Satanic,1538/2134,1322/1800,1539/3097,575/893,887/2501,1156/3060,1164/1730,304/2212,773/2267,541/2550,247/1700,124/1133
+Yuma,1410/1742,1095/1800,1339/2356,613/855,1266/2380,1002/2267,1309/1677,633/2388,712/1700,391/1417,230/1700,161/1417
+Nightfall,1440/1784,1273/1800,1347/2435,580/1051,961/1896,995/2607,1159/1503,677/2349,989/2550,402/1983,185/1700,93/850
+shiro,1447/1895,1277/1800,1384/2466,548/678,897/2097,1302/3060,1157/1662,349/1445,754/1983,674/1983,192/1700,96/1417
+skiter,1400/1771,1240/1740,1386/2306,602/817,883/1896,718/2153,1144/1547,635/1808,944/1983,283/1417,63/567,252/1700
+Ghost,1390/1855,1210/1800,1380/2842,547/855,816/1976,998/2720,1076/1594,473/2031,669/1983,597/2267,145/1700,109/1133
+miCKe,1477/2009,1154/1800,1322/2206,544/665,982/2662,940/2833,1130/1690,414/2167,600/1983,450/1700,167/1700,117/1133
+watson,1381/1730,1210/1800,1237/2730,557/1020,803/1734,931/2947,1221/1811,351/2099,711/1983,432/1700,251/1700,167/1133
+Pure,1416/1915,1148/1800,1274/2322,556/760,898/2138,1030/2493,1168/1654,389/1709,631/1700,451/1700,77/1700,116/850
+gotthejuice,1530/1885,1288/1800,1376/1913,553/665,777/1734,823/1927,1178/1639,279/921,626/1700,537/1700,0/0,179/850
+JaCkky,1314/1769,1299/1800,1253/2085,546/735,860/2178,789/2720,1150/1729,464/1275,516/1700,425/1417,121/1133,91/850
+Wisper,1234/1599,973/1680,1107/2031,620/855,890/1976,266/1133,1335/.1697,1042/2641,551/1700,115/1133,322/1700,368/1700
+Ame,1436/2977,1171/1800,1361/2647,563/792,694/1775,852/1947,1072/1763,330/2015,443/1700,407/1700,148/1700,148/1133
+Crystallis,1308/1641,1166/1800,1142/2060,542/728,809/2017,619/1927,1308/1641,525/1958,520/2267,304/1700,203/1700,89/850`;
+    const midCSV = `Player,GPM,Deaths,Creeps,Shards,Kills,Towers,Teamfight,Stuns,Tormentor,Roshan,First Blood,Courier,Wards,Stacks,Lotuses,Watchers,Runes,Smokes
+bzm,1289/1587,1241/1800,1076/1950,536/728,919/2097,467/2153,1318/1807,1383/5564,444/1700,343/1700,127/1700,317/1983,100/100,100/100,100/100,100/100,1500/2000,100/100
+kiyotaka,1290/1747,937/1800,1182/2223,574/988,1082/2904,271/1473,1248/1713,1132/4911,472/1983,378/1700,31/567,220/1700,100/100,100/100,100/100,100/100,1500/2000,100/100
+4nalog,1218/1518,1143/1800,1162/2012,621/855,831/2138,368/1473,1252/1672,1134/4019,459/1700,436/1983,46/567,345/2550,100/100,100/100,100/100,100/100,1500/2000,100/100
+Larl,1205/1482,1093/1800,1078/1950,597/880,948/2178,243/1020,1324/1681,1556/6161,283/1133,202/850,202/1700,121/850,100/100,100/100,100/100,100/100,1500/2000,100/100
+Mac(*),1262/1420,1368/1740,988/1337,555/665,1137/1815,782/1473,1527/1769,470/1315,425/850,170/567,170/567,170/567,100/100,100/100,100/100,100/100,1500/2000,100/100
+Marl1ne,1214/1655,1047/1740,1057/1740,597/804,869/1896,416/1813,1255/1609,942/2106,598/1700,252/1417,63/567,157/1133,100/100,100/100,100/100,100/100,1500/2000,100/100
+Nisha,1183/1568,1165/1800,928/1718,536/665,902/1815,373/1133,1273/1755,828/3004,317/1700,333/1983,67/1133,300/850,100/100,100/100,100/100,100/100,1500/2000,100/100
+gpk,1203/1550,1407/1800,1011/1688,553/747,961/2299,381/1700,1329/1745,755/3436,438/1700,219/1133,52/1133,103/1133,100/100,100/100,100/100,100/100,1500/2000,100/100
+No[o]ne,1197/1740,1008/1740,1048/2107,573/868,823/1896,179/680,1346/1851,1012/4035,325/1317,216/1133,247/1700,201/1133,100/100,100/100,100/100,100/100,1500/2000,100/100
+Niku,1228/1470,1184/1680,1049/1659,559/665,656/1291,268/680,1311/1811,976/2438,224/1133,134/850,268/1700,224/850,100/100,100/100,100/100,100/100,1500/2000,100/100
+SumaiL,1154/1588,1245/1800,1023/2118,548/830,829/2097,195/1247,1264/1708,756/3933,127/1417,181/1417,109/1700,181/850,100/100,100/100,100/100,100/100,1500/2000,100/100
+Xm,1148/2490,1143/1800,1000/1975,559/792,675/1694,301/1360,1266/1777,673/2967,320/1417,136/850,25/567,357/1700,100/100,100/100,100/100,100/100,1500/2000,100/100
+RCY,1151/1556,1140/1740,906/1667,509/665,769/1936,296/1247,1369/1801,960/3190,349/1700,174/1133,131/1700,65/850,100/100,100/100,100/100,100/100,1500/2000,100/100
+Quinn,1169/1577,1080/1800,977/2021,545/925,835/2218,440/2040,1275/1790,748/4268,237/1700,195/1417,84/1700,181/1417,100/100,100/100,100/100,100/100,1500/2000,100/100
+NothingToSay,1156/1591,1114/1800,967/1938,543/684,794/1775,58/567,1345/1757,941/4520,417/2267,144/1417,96/1700,80/1133,100/100,100/100,100/100,100/100,1500/2000,100/100
+Armel,1106/1389,1189/1740,968/1675,550/747,722/1613,279/907,1372/1747,522/1929,334/1133,304/1133,61/567,121/850,100/100,100/100,100/100,100/100,1500/2000,100/100`;
+    const supportCSV = `Player,Teamfight,Stuns,Tormentor,Roshan,First Blood,Courier,Wards,Stacks,Lotuses,Watchers,Runes,Smokes
+Mira,1264/1699,2019/6784,634/1983,46/850,340/1700,510/2267,966/1883,742/2550,1088/2698,172/1049,345/928,741/1509
+KJ,1198/1634,1032/3531,436/1417,46/567,138/1700,276/1133,1594/2712,1029/2550,864/2343,0/0,520/1049,1323/2358
+Scofield,1239/1664,2428/5226,345/1700,115/1133,138/1700,391/1700,510/866,827/1813,1456/3763,0/0,409/1129,405/1226
+rue,1208/1659,1872/5436,406/1700,58/850,270/1700,734/3683,855/1620,769/2210,905/2343,347/1694,311/847,334/943
+Sneyking,1168/1565,931/3186,693/1983,0/0,63/567,63/567,1155/1770,397/963,1112/2840,802/3025,632/1129,870/1792
+Miposhka,1268/1717,1161/4006,444/1417,39/567,155/1700,309/2267,1220/2411,742/1813,363/1349,462/1815,388/928,1331/2736
+tofu,1309/1895,1907/8545,432/1700,28/567,28/567,446/2550,745/1205,1045/2833,862/2201,204/2057,300/1049,534/1415
+XinQ,1348/1792,2210/7725,290/1417,155/1133,309/1700,174/1417,706/1544,680/1473,576/1775,168/1573,470/1331,553/1604
+Boxi,1248/1838,1853/5676,233/1133,50/850,133/1700,283/1983,953/1695,893/3117,576/1491,109/847,383/887,993/1698
+Tims,1178/1647,1172/2593,334/1133,152/850,182/1700,698/1700,795/1281,613/1473,1278/2414,0/0,493/1089,697/1415
+OmaR,1193/1695,1568/5667,344/1417,72/1133,289/1700,289/850,1116/2185,619/2097,748/2485,0/0,291/887,951/2075
+Bignum,1179/1687,1329/3491,414/1700,0/0,174/1700,501/2833,971/1846,510/1190,502/1491,307/1573,351/847,1219/2075
+Jing(*),1316/1476,1499/2695,170/567,170/567,340/1133,510/1133,588/753,1105/1870,852/1633,0/0,339/565,481/849
+Whitemon,1208/1776,830/2909,304/1983,76/850,178/1700,228/1700,1334/2335,764/1813,610/2343,179/1815,327/968,1309/2358
+9Class,1214/1740,1474/7481,294/1700,124/850,278/1700,541/3683,828/1582,791/2267,864/2840,196/1694,374/1049,247/943
+Cr1t-,1055/1437,1205/2879,567/1700,126/850,63/567,441/1983,833/1582,957/2663,592/1704,224/726,381/847,744/1698
+Saksa,1312/1856,1414/4750,495/1983,51/850,178/1700,546/2550,503/942,700/2437,1014/3266,119/1170,544/1291,275/1038
+Zayac,1290/1744,984/2564,224/850,0/0,268/1700,671/2550,886/1243,1101/2210,561/1278,0/0,350/807,804/1226
+Save-,1292/1671,1817/4322,438/1700,142/1133,129/1700,129/850,623/1168,538/1813,168/923,57/807,292/645,986/1698
+GH,1275/1750,1423/5078,380/1700,0/0,326/1700,253/1417,777/1318,445/1700,512/1562,0/0,409/847,771/1509
+Dukalis,1312/1772,484/1987,294/1700,124/850,93/1700,108/1133,1107/2448,522/1700,616/1988,130/1049,284/726,1472/2830
+panto,1276/1684,960/3359,541/2550,0/0,340/1700,93/850,976/1959,661/2153,267/1349,145/1170,275/847,978/2075
+planet,1291/1708,1402/3907,305/1417,64/850,128/1700,449/2550,518/1055,690/1983,643/2130,112/1008,324/1089,671/1415`;
+
+    
+    // --- App setup ---
+    const roleGrid = document.getElementById('roleGrid');
+    const sections = [
+      new RoleSection(roleGrid,'Core',coreCSV),
+      new RoleSection(roleGrid,'Mid',midCSV),
+      new RoleSection(roleGrid,'Support',supportCSV)
+    ];
+
+    const gtWrap = document.getElementById('grandTotal');
+    const gtAvg = document.getElementById('gtAvg');
+    const gtMax = document.getElementById('gtMax');
+    const grand = { Core:{a:0,m:0}, Mid:{a:0,m:0}, Support:{a:0,m:0} };
+
+    document.addEventListener('role:updated', (e)=>{
+      const {role, sumAvg, sumMax} = e.detail;
+      if(grand[role]){ grand[role].a = sumAvg; grand[role].m = sumMax; }
+      const totAvg = Object.values(grand).reduce((t,o)=>t+o.a,0);
+      const totMax = Object.values(grand).reduce((t,o)=>t+o.m,0);
+      gtAvg.textContent = fmt(totAvg); gtMax.textContent = fmt(totMax);
+      gtWrap.hidden = false;
+    });
+  </script>
+</body>
+</html>
