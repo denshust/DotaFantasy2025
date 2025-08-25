@@ -30,7 +30,14 @@
     .card-header{padding:14px 16px; border-bottom:1px solid #22284a; display:flex; align-items:center; justify-content:space-between; gap:10px}
     .role-title{font-weight:700; letter-spacing:.3px}
 
-    .row{display:grid; grid-template-columns: 1.1fr 1.05fr 0.7fr 1.1fr 1.1fr; gap:10px; padding:8px 12px; align-items:center}
+    .row {
+    display: grid;
+    /* widened first column, added a bit more space before multiplier */
+    grid-template-columns: 2.5fr 1.6fr 0fr 1.1fr 1.1fr;
+    gap: 12px; /* slightly more breathing room */
+    padding: 8px 12px;
+    align-items: center;
+    }
     .row.head{color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em}
     .row:nth-child(odd){background:rgba(255,255,255,.02)}
 
