@@ -135,9 +135,9 @@
     function fmt(n){ return Number(n).toLocaleString(undefined,{maximumFractionDigits:1}); }
 
     const metricGroups = {
-      Red:["GPM","Deaths","Creeps","Shards","Kills","Towers"],
-      Green:["Teamfight","Stuns","Tormentor","Roshan","First Blood","Courier"],
-      Blue:["Wards","Stacks","Lotuses","Watchers","Runes","Smokes"]
+      Red:["GPM - ЗЗХ","Deaths - Смерті","Creeps - Кріпи","Shards - Зібраний Лютит","Kills - Убивства","Towers - Знищення Веж"],
+      Green:["Teamfight - Командні Бої","Stuns - Приголомшення","Tormentor - Мучитель","Roshan - Убивства Рошана","First Blood - Перша Кров","Courier - Курєри"],
+      Blue:["Wards - Оглядових Вардів","Stacks - Заскиртовані Табори","Lotuses - Лотуси","Watchers - Спостерігачі","Runes - Рун Підібрано","Smokes - Дим"]
     };
 
     const roleConfig = {
@@ -157,59 +157,107 @@
         this.afterLoad();
       }
 
-      build(){
-        this.card = document.createElement('div');
-        this.card.className = 'card';
-        this.card.innerHTML = `
-          <div class="card-header">
-            <div class="role-title">${this.roleName}</div>
-          </div>
-          <div class="file-row">
-            <select class="playerSel"></select>
-          </div>
-          <div class="row head">
-            <div>Metric</div>
-            <div>Multiplier (%)</div>
-            <div></div>
-            <div>Result average</div>
-            <div>Result max</div>
-          </div>
-          <div class="rows"></div>
-          <div class="sum"><span class="label">Summ:</span>
-            <div>Avg <span class="num" data-sum-avg>0</span></div>
-            <div>Max <span class="num" data-sum-max>0</span></div>
-          </div>
-        `;
-        this.root.appendChild(this.card);
-        this.rowsHost = this.card.querySelector('.rows');
-        this.sumAvgEl = this.card.querySelector('[data-sum-avg]');
-        this.sumMaxEl = this.card.querySelector('[data-sum-max]');
+// ------------------ COMPLETE build() ------------------
+build(){
+  this.card = document.createElement('div');
+  this.card.className = 'card';
+  this.card.innerHTML = `
+    <div class="card-header">
+      <div class="role-title">${this.roleName}</div>
+    </div>
+    <div class="file-row">
+      <select class="playerSel"></select>
+    </div>
+    <div class="row head">
+      <div>Metric</div>
+      <div>Multiplier (%)</div>
+      <div></div>
+      <div>Result average</div>
+      <div>Result max</div>
+    </div>
+    <div class="rows"></div>
 
-        // Metric rows
-        this.metricRows = roleConfig[this.roleName].map((color, idx)=>this.createMetricRow(idx, color));
+    <!-- SUM (without prefix) - remains right under the metrics -->
+    <div class="sum" data-sum-block>
+      <div><span class="label">Sum:</span></div>
+      <div>Avg <span class="num" data-sum-avg>0</span></div>
+      <div>Max <span class="num" data-sum-max>0</span></div>
+    </div>
+  `;
+  this.root.appendChild(this.card);
 
-        this.playerSel = this.card.querySelector('.playerSel');
-        this.playerSel.addEventListener('change', ()=>{ 
-          this.state.player = this.playerSel.value; 
-          this.populatePrefixes(); 
-          this.update(); 
-        });
+  // hosts & references
+  this.rowsHost = this.card.querySelector('.rows');
 
-        // Prefix row
-        this.prefixRow = document.createElement('div');
-        this.prefixRow.className = 'row';
-        this.prefixRow.innerHTML = `
-          <select class="prefixSel"><option value="" disabled selected>Choose prefix…</option></select>
-          <input class="prefixBonus" type="number" step="1" value="0" min="0"/>%
-          <div></div><div></div><div></div>
-        `;
-        this.card.appendChild(this.prefixRow);
-        this.prefixSel = this.prefixRow.querySelector('.prefixSel');
-        this.prefixBonusInput = this.prefixRow.querySelector('.prefixBonus');
+  // Sum (without prefix)
+  this.sumAvgEl = this.card.querySelector('[data-sum-avg]');
+  this.SumaxEl = this.card.querySelector('[data-sum-max]');
 
-        this.prefixSel.addEventListener('change', ()=>{ this.state.prefix = this.prefixSel.value; this.update(); });
-        this.prefixBonusInput.addEventListener('input', ()=>{ this.state.prefixBonus = parseFloat(this.prefixBonusInput.value)||0; this.update(); });
-      }
+  // Metric rows
+  this.metricRows = roleConfig[this.roleName].map((color, idx)=>this.createMetricRow(idx, color));
+
+  // player select
+  this.playerSel = this.card.querySelector('.playerSel');
+  this.playerSel.addEventListener('change', ()=>{ 
+    this.state.player = this.playerSel.value; 
+    this.populatePrefixes(); 
+    this.update(); 
+  });
+
+  // ----- Prefix controls + result cells (placed after Sum) -----
+  this.prefixRow = document.createElement('div');
+  this.prefixRow.className = 'row';
+  this.prefixRow.innerHTML = `
+    <div>
+      <strong>Prefix</strong><br/>
+      <select class="prefixSel"><option value="" disabled selected>Choose prefix…</option></select>
+    </div>
+
+    <div>
+      <strong>Prefix %</strong><br/>
+      <input class="prefixBonus" type="number" step="1" value="0" min="0"/>
+    </div>
+
+    <div></div>
+
+    <div>
+      <div class="hint">Prefix Avg</div>
+      <div class="num" data-prefix-avg>0</div>
+    </div>
+
+    <div>
+      <div class="hint">Prefix Max</div>
+      <div class="num" data-prefix-max>0</div>
+    </div>
+  `;
+  // insert prefix row after the SUM block so it visually sits under the prefix controls
+  const sumBlock = this.card.querySelector('[data-sum-block]');
+  sumBlock.insertAdjacentElement('afterend', this.prefixRow);
+
+  this.prefixSel = this.prefixRow.querySelector('.prefixSel');
+  this.prefixBonusInput = this.prefixRow.querySelector('.prefixBonus');
+  this.prefixAvgEl = this.prefixRow.querySelector('[data-prefix-avg]');
+  this.prefixMaxEl = this.prefixRow.querySelector('[data-prefix-max]');
+
+  this.prefixSel.addEventListener('change', ()=>{ this.state.prefix = this.prefixSel.value; this.update(); });
+  this.prefixBonusInput.addEventListener('input', ()=>{ this.state.prefixBonus = parseFloat(this.prefixBonusInput.value)||0; this.update(); });
+
+  // ----- Total row (at bottom of card) -----
+  this.totalRow = document.createElement('div');
+  this.totalRow.className = 'sum';
+  this.totalRow.innerHTML = `
+    <div><span class="label">Total:</span></div>
+    <div>Avg <span class="num" data-total-avg>0</span></div>
+    <div>Max <span class="num" data-total-max>0</span></div>
+  `;
+  this.card.appendChild(this.totalRow);
+
+  this.totalAvgEl = this.totalRow.querySelector('[data-total-avg]');
+  this.totalMaxEl = this.totalRow.querySelector('[data-total-max]');
+}
+// ---------------- end build() ------------------
+
+        // ---------------- end build() ------------------
 
       createMetricRow(idx, color){
         const row = document.createElement('div');
@@ -254,38 +302,63 @@
         return parseCell(this.data.rows[pIdx][mIdx]);
       }
 
-      update(){
-        let sumAvg = 0, sumMax = 0;
-        for(let i=0;i<3;i++){
-          const metric = this.state.metrics[i];
-          const mult = (this.state.multipliers[i]||0)/100;
-          const {avg,max} = this.getCell(this.state.player, metric);
-          const rAvg = avg*mult, rMax = max*mult;
-          sumAvg += rAvg; sumMax += rMax;
-          const mr = this.metricRows[i];
-          mr.avgEl.textContent = fmt(rAvg);
-          mr.maxEl.textContent = fmt(rMax);
-        }
+      // Update function (with prefix contribution split)
+      // ------------------ COMPLETE update() ------------------
+update(){
+  // 1) compute Sum (no prefix) and show per-metric results
+  let sumAvg = 0, sumMax = 0;
+  for(let i=0;i<3;i++){
+    const metric = this.state.metrics[i];
+    const mult = (this.state.multipliers[i]||0)/100;
+    const {avg,max} = this.getCell(this.state.player, metric);
+    const rAvg = avg*mult, rMax = max*mult;
+    sumAvg += rAvg; sumMax += rMax;
+    const mr = this.metricRows[i];
+    mr.avgEl.textContent = fmt(rAvg);
+    mr.maxEl.textContent = fmt(rMax);
+  }
 
-        // Apply prefix
-        let realBonus = 0;
-        if(this.state.player && this.state.prefix && prefixData[this.state.player]){
-          const chance = prefixData[this.state.player][this.state.prefix] || 0;
-          const bonus = this.state.prefixBonus || 0;
-          realBonus = (chance/100)*(bonus/100);
-        }
+  // show Sum (without prefix) under the metrics
+  this.sumAvgEl.textContent = fmt(sumAvg);
+  this.SumaxEl.textContent = fmt(sumMax);
 
-        const sumAvgReal = sumAvg*(1+realBonus);
-        const sumMaxReal = sumMax*(1+realBonus);
-        this.sumAvgEl.textContent = fmt(sumAvgReal);
-        this.sumMaxEl.textContent = fmt(sumMaxReal);
+  // 2) compute prefix contribution (expected value) and show under prefix controls
+  let prefixBonusAvg = 0, prefixBonusMax = 0;
+  if(this.state.player && this.state.prefix && prefixData[this.state.player]){
+    const chance = prefixData[this.state.player][this.state.prefix] || 0; // percent
+    const bonus = this.state.prefixBonus || 0; // percent
+    const factor = (chance/100) * (bonus/100); // fraction
+    prefixBonusAvg = sumAvg * factor;
+    prefixBonusMax = sumMax * factor;
+  }
 
-        document.dispatchEvent(new CustomEvent('role:updated', {detail:{role:this.roleName, sumAvg:sumAvgReal, sumMax:sumMaxReal}}));
-      }
+  // Put prefix contributions under the prefix controls (title above, value below)
+  this.prefixAvgEl.textContent = fmt(prefixBonusAvg);
+  this.prefixMaxEl.textContent = fmt(prefixBonusMax);
+
+  // 3) total = sum + prefix contribution, show at bottom of the card
+  const totalAvg = sumAvg + prefixBonusAvg;
+  const totalMax = sumMax + prefixBonusMax;
+
+  this.totalAvgEl.textContent = fmt(totalAvg);
+  this.totalMaxEl.textContent = fmt(totalMax);
+
+  // dispatch event — keep same keys so global grand total still works (total values)
+  document.dispatchEvent(new CustomEvent('role:updated', {
+    detail:{
+      role: this.roleName,
+      sumAvg: totalAvg,   // grand totals expect the total values here
+      Sumax: totalMax
+    }
+  }));
+}
+// ---------------- end update() ------------------
+
+        /* ---------------- end update() ------------------ */
     }
 
 // --- Demo CSVs for Core, Mid, Support (replace with your own) ---
-    const coreCSV = `Player,GPM,Deaths,Creeps,Shards,Kills,Towers,Teamfight,Stuns,Tormentor,Roshan,First Blood,Courier
+    const coreCSV = `Player,GPM - ЗЗХ,Deaths - Смерті,Creeps - Кріпи,Shards - Зібраний Лютит,Kills - Убивства,Towers - Знищення Веж,Teamfight - Командні Бої,Stuns - Приголомшення,Tormentor - Мучитель,Roshan - Убивства Рошана,First Blood - Перша Кров,Courier - Курєри
 Yatoro,1590/1981,1195/1800,1605/3038,602/912,1172/2622,1097/2609,1275/1748,464/1705,908/1983,695/1983,193/1700,386/1983
 Akashi,1403/1586,1260/1620,1268/1683,566/665,835/1291,850/1813,1376/1613,1185/2850,340/850,510/1417,340/1133,255/850
 Satanic,1538/2134,1322/1800,1539/3097,575/893,887/2501,1156/3060,1164/1730,304/2212,773/2267,541/2550,247/1700,124/1133
@@ -302,7 +375,7 @@ JaCkky,1314/1769,1299/1800,1253/2085,546/735,860/2178,789/2720,1150/1729,464/127
 Wisper,1234/1599,973/1680,1107/2031,620/855,890/1976,266/1133,1335/.1697,1042/2641,551/1700,115/1133,322/1700,368/1700
 Ame,1436/2977,1171/1800,1361/2647,563/792,694/1775,852/1947,1072/1763,330/2015,443/1700,407/1700,148/1700,148/1133
 Crystallis,1308/1641,1166/1800,1142/2060,542/728,809/2017,619/1927,1308/1641,525/1958,520/2267,304/1700,203/1700,89/850`;
-    const midCSV = `Player,GPM,Deaths,Creeps,Shards,Kills,Towers,Teamfight,Stuns,Tormentor,Roshan,First Blood,Courier,Wards,Stacks,Lotuses,Watchers,Runes,Smokes
+    const midCSV = `Player,GPM - ЗЗХ,Deaths - Смерті,Creeps - Кріпи,Shards - Зібраний Лютит,Kills - Убивства,Towers - Знищення Веж,Teamfight - Командні Бої,Stuns - Приголомшення,Tormentor - Мучитель,Roshan - Убивства Рошана,First Blood - Перша Кров,Courier - Курєри,Wards - Оглядових Вардів,Stacks - Заскиртовані Табори,Lotuses - Лотуси,Watchers - Спостерігачі,Runes - Рун Підібрано,Smokes - Дим
 bzm,1289/1587,1241/1800,1076/1950,536/728,919/2097,467/2153,1318/1807,1383/5564,444/1700,343/1700,127/1700,317/1983,100/100,100/100,100/100,100/100,1500/2000,100/100
 kiyotaka,1290/1747,937/1800,1182/2223,574/988,1082/2904,271/1473,1248/1713,1132/4911,472/1983,378/1700,31/567,220/1700,100/100,100/100,100/100,100/100,1500/2000,100/100
 4nalog,1218/1518,1143/1800,1162/2012,621/855,831/2138,368/1473,1252/1672,1134/4019,459/1700,436/1983,46/567,345/2550,100/100,100/100,100/100,100/100,1500/2000,100/100
@@ -319,7 +392,7 @@ RCY,1151/1556,1140/1740,906/1667,509/665,769/1936,296/1247,1369/1801,960/3190,34
 Quinn,1169/1577,1080/1800,977/2021,545/925,835/2218,440/2040,1275/1790,748/4268,237/1700,195/1417,84/1700,181/1417,100/100,100/100,100/100,100/100,1500/2000,100/100
 NothingToSay,1156/1591,1114/1800,967/1938,543/684,794/1775,58/567,1345/1757,941/4520,417/2267,144/1417,96/1700,80/1133,100/100,100/100,100/100,100/100,1500/2000,100/100
 Armel,1106/1389,1189/1740,968/1675,550/747,722/1613,279/907,1372/1747,522/1929,334/1133,304/1133,61/567,121/850,100/100,100/100,100/100,100/100,1500/2000,100/100`;
-    const supportCSV = `Player,Teamfight,Stuns,Tormentor,Roshan,First Blood,Courier,Wards,Stacks,Lotuses,Watchers,Runes,Smokes
+    const supportCSV = `Player,Teamfight - Командні Бої,Stuns - Приголомшення,Tormentor - Мучитель,Roshan - Убивства Рошана,First Blood - Перша Кров,Courier - Курєри,Wards - Оглядових Вардів,Stacks - Заскиртовані Табори,Lotuses - Лотуси,Watchers - Спостерігачі,Runes - Рун Підібрано,Smokes - Дим
 Mira,1264/1699,2019/6784,634/1983,46/850,340/1700,510/2267,966/1883,742/2550,1088/2698,172/1049,345/928,741/1509
 KJ,1198/1634,1032/3531,436/1417,46/567,138/1700,276/1133,1594/2712,1029/2550,864/2343,0/0,520/1049,1323/2358
 Scofield,1239/1664,2428/5226,345/1700,115/1133,138/1700,391/1700,510/866,827/1813,1456/3763,0/0,409/1129,405/1226
@@ -345,76 +418,89 @@ panto,1276/1684,960/3359,541/2550,0/0,340/1700,93/850,976/1959,661/2153,267/1349
 planet,1291/1708,1402/3907,305/1417,64/850,128/1700,449/2550,518/1055,690/1983,643/2130,112/1008,324/1089,671/1415`;
 
     // --- Prefix CSV ---
-    const prefixCSV = `Yatoro,Dashing(68%),Virtuoso(34%),Emerald(35%),Crimson(23%),Otherwordly(20%),Brawny(16%),Hirsute(16%)
-Akashi,Dashing(60%),Brawny(40%),Celurean(20%),Virtuoso(20%),Otherwordly(20%)
-Satanic,Dashing(65%),Otherwordly(42%),Virtuoso(35%),Elemental(24%),Hirsute(24%),Bestial(24%)
-Yuma,Dashing(51%),Virtuoso(39%),Otherwordly(30%),Elemental(27%),Hirsute(27%),Crimson(27%)
-Nightfall,Coveted(93%),Brawny(45%),Dashing(33%),Cerulean(24%)Otherwordly(24%),Balanced(22%)
-shiro,Dashing(64%),Otherwordly(30%),Virtuoso(28%),Bestial(23%),Emerald(21%),Cerulean(15%)
-skiter,Brawny(52%),Dashing(26%),Emerald(26%),Hirsute(26%),Balanced(22%),Virtuoso(19%)
-Ghost,Dashing(77%),Elemental(32%),Virtuoso(32%),Otherwordly(23%),Emerald(21%),Crimson(21%)
-miCKe,Dashing(47%),Emerald(24%),Brawny(24%),Otherwordly(24%),Hirsute(24%),Balanced(24%)
-watson,Dashing(62%),Otherwordly(36%),Virtuoso(34%),Bestial(30%),Hirsute(25%),Crimson(21%),Elemental(20%),Balanced(20%)
-Pure,Dashing(45%),Emerald(33%),Hirsute(33%),Brawny(26%),Otherwordly(24%)
-gotthejuice,Dashing(58%),Otherwordly(37%),Brawny(26%),Bestial(26%),Elemental(21%),Cerulean(21%)
-JaCkky,Brawny(46%),Dashing(43%),Elemental(25%),Cerulean(25%),Virtuoso(25%),Otherwordly(18%)
-Wisper,Hirsute(70%),Coveted(32%),Brawny(46%),Crimson(38%),Balanced(27%),Canny(27%),Elemental(24%)
-Ame,Dashing(62%),Sacrificial(58%),Virtuoso(38%),Otherwordly(30%),Hirsute(26%)
-Crystallis,Dashing(43%),Brawny(39%),Hirsute(24%),Elemental(19%),Otherwordly(19%)
-bzm,Virtuoso(72%),Canny(48%),Otherwordly(39%),Bestial(37%),Crimson(34%),Elemental(31%),Hirsute(30%)
-kiyotaka,Sacrificial(56%),Otherwordly(50%),Canny(46%),Bestial(41%),Dashing(35%),Cerulean(35%)
-4nalog,Hirsute(51%),Sacrificial(49%),Virtuoso(43%),Dashing(38%),Otherwordly(35%),Bestial(32%),Crimson(30%)
-Larl,Otherwordly(62%),Dashing(43%),Hirsute(38%),Canny(38%),Crimson(36%),Sacrificial(36%),Elemental(31%)
-Mac,Balanced(60%),Sacrificial(50%),Otherwordly(40%),Crimson(30%),Elemental(20%),Virtuoso(20%)
-Marl1ne,Virtuoso(74%),Crimson(52%),Hirsute(44%),Bestial(41%),Brawny(30%)
-gpk,Otherwordly(45%),Canny(39%),Elemental(35%),Cerualean(33%),Hirsute(33%),Bestial(33%)
-Nisha,Otherwordly(59%),Sacrificial(41%),Hirsute(39%),Crimson(35%),Canny(33%),Dashing(29%),Bestial(29%),Elemental(27%),Cerulean(25%)
-No[o]ne,Virtuoso(55%),Otherwordly(51%),Canny(42%),Bestial(40%),Cerulean(35%),Hirsute(33%),Crimson(31%)
-Niku,Sacrificial(63%),Virtuoso(53%),Brawny(53%),Cerulean(26%),Dashing(21%),Otherwordly(21%)
-RCY,Hirsute(41%),Otherwordly(38%),Canny(38%),Coveted(33%),Cerulean(28%),Bestial(28%),Brawny(26%)
-Quinn,Virtuoso(87%),Canny(49%),Otherwordly(44%),Bestial(43%),Cerulean(34%),Hirsute(34%),Dashing(33%)
-NothingToSay,Hirsute(57%),Virtuoso(36%),Crimson(34%),Canny(34%),Otherwordly(32%),Brawny(26%),Bestial(26%)
-SumaiL,Hirsute(49%),Sacrificial(47%),Balanced(38%),Canny(36%),Cerualean(34%),Bestial(34%),Otherwordly(32%)
-Xm,Otherwordly(51%),Hirsute(39%),Canny(41%),Virtuoso(39%),Cerulean(35%),Balanced(23%)
-Armel,Virtuoso(79%),Otherwordly(57%),Canny(43%),Bestial(39%),Crimson(32%),Elemental(29%),Hirsute(29%)
-Mira,Canny(58%),Elemental(27%),Hirsute(24%),Bestial(22%),Emerald(20%),Brawny(18%)
-KJ,Elemental(39%),Brawny(43%),Crimson(35%),Canny(32%),Bestial(30%),Coveted(16%),Sacrificial(16%)
-Scofield,Canny(51%),Brawny(41%),Hirsute(30%),Bestial(27%),Coveted(24%),Emerald(16%),Crimson(14%)
-rue,Canny(55%),Emerald(39%),Dashing(30%),Cerulean(23%),Otherwordly(23%),Elemental(20%),Hirsute(20%)
-Sneyking,Coveted(85%),Canny(59%),Elemental(44%),Bestial(37%),Emerald(33%),Otherwordly(30%),Cerulean(26%)
-Miposhka,Coveted(75%),Canny(66%),Crimson(32%),Hirsute(23%),Elemenral(20%),Balanced(20%)
-tofu,Canny(59%),Emerald(43%),Coveted(33%),Balanced(33%),Elemental(18%),Bestial(18%)
-XinQ,Canny(55%),Emerald(30%),Hirsute(30%),Brawny(27%),Bestial(25%),Coveted(18%)
-Boxi,Canny(41%),Balanced(39%),Emerald(35%),Elemental(29%),Coveted(24%),Bestial(22%)
-Tims,Brawny(36%),Elemental(29%),Canny(29%),Dashing(25%),Hirsute(25%),Crimson(25%),Sacrificial(21%)
-OmaR,Canny(51%),Balanced(36%),Elemental(30%),Bestial(28%),Crimson(26%),Elemrald(23%)
-Bignum,Elemental(38%),Canny(33%),Balanced(31%),Brawny(28%),Hirsute(28%),Sacrificial(21%),
-Whitemon,Canny(66%),Emerald(31%),Sacrificial(25%),Hirsute(24%),Crisom(21%),Virtuoso(19%)
-9Class,Canny(38%),Emerald(27%),Balanced(27%),Crimson(27%),Coveted(25%),Sacrificial(24%),Elemental(22%)
-Cr1t-,Canny(59%),Virtuoso(44%),Sacrificial(44%),Emerald(26%),Hirsute(26%)
-Saksa,Brawny(43%),Canny(34%),Hirsute(28%),Elemental(22%),Bestial(18%),Emerald(16%)
-Zayac,Hirsute(53%),Canny(53%),Bestial(37%),Balanced(32%),Crimson(26%),Emerald(21%)
-Erice,Virtuoso(60%),Canny(50%),Dashing(40%),Sacrificial(20%)
-Save,Canny(70%),Virtuoso(33%),Otherwordly(33%),Emerald(30%),Balanced(29%),Coveted(18%)
-GH,Brawny(55%),Bestial(36%),Elemental(34%),Coveted(32%),Hirsute(28%),Emerald(19%),Balanced(19%),Canny(19%)
-Dukalis,Canny(71%),Virtuoso(51%),Crimson(25%),Elemental(20%),Sacrificial(20%),Cerulean(18%)
-panto,Canny(60%),Elemental(35%),Crimson(35%),Balanced(33%),Hirsute(27%),Virtuoso(24%),Emerald(22%)
-planet,Canny(47%),Crimson(30%),Brawny(28%),Elemental(26%),Balanced(25%),Emerald(23%),Hirsute(23%),Bestial(21%)`;
+    const prefixCSV = `Yatoro,Dashing - Елегантний ?(68%),Virtuoso - Віртуозний ?(34%),Emerald - Смарагдовий(35%),Crimson - Керамзиновий(23%),Otherwordly - Потойбічний(20%),Brawny - М’язистий(16%),Hirsute - Кошлатий(16%)
+Akashi,Dashing - Елегантний ?(60%),Brawny - М’язистий(40%),Celurean(20%),Virtuoso - Віртуозний ?(20%),Otherwordly - Потойбічний(20%)
+Satanic,Dashing - Елегантний ?(65%),Otherwordly - Потойбічний(42%),Virtuoso - Віртуозний ?(35%),Elemental - Елементальний(24%),Hirsute - Кошлатий(24%),Bestial - Звірячий(24%)
+Yuma,Dashing - Елегантний ?(51%),Virtuoso - Віртуозний ?(39%),Otherwordly - Потойбічний(30%),Elemental - Елементальний(27%),Hirsute - Кошлатий(27%),Crimson - Керамзиновий(27%)
+Nightfall,Coveted - Жаданий(93%),Brawny - М’язистий(45%),Dashing - Елегантний ?(33%),Cerulean - Блакитний ?(24%)Otherwordly - Потойбічний(24%),Balanced - Урівноважений(22%)
+shiro,Dashing - Елегантний ?(64%),Otherwordly - Потойбічний(30%),Virtuoso - Віртуозний ?(28%),Bestial - Звірячий(23%),Emerald - Смарагдовий(21%),Cerulean - Блакитний ?(15%)
+skiter,Brawny - М’язистий(52%),Dashing - Елегантний ?(26%),Emerald - Смарагдовий(26%),Hirsute - Кошлатий(26%),Balanced - Урівноважений(22%),Virtuoso - Віртуозний ?(19%)
+Ghost,Dashing - Елегантний ?(77%),Elemental - Елементальний(32%),Virtuoso - Віртуозний ?(32%),Otherwordly - Потойбічний(23%),Emerald - Смарагдовий(21%),Crimson - Керамзиновий(21%)
+miCKe,Dashing - Елегантний ?(47%),Emerald - Смарагдовий(24%),Brawny - М’язистий(24%),Otherwordly - Потойбічний(24%),Hirsute - Кошлатий(24%),Balanced - Урівноважений(24%)
+watson,Dashing - Елегантний ?(62%),Otherwordly - Потойбічний(36%),Virtuoso - Віртуозний ?(34%),Bestial - Звірячий(30%),Hirsute - Кошлатий(25%),Crimson - Керамзиновий(21%),Elemental - Елементальний(20%),Balanced - Урівноважений(20%)
+Pure,Dashing - Елегантний ?(45%),Emerald - Смарагдовий(33%),Hirsute - Кошлатий(33%),Brawny - М’язистий(26%),Otherwordly - Потойбічний(24%)
+gotthejuice,Dashing - Елегантний ?(58%),Otherwordly - Потойбічний(37%),Brawny - М’язистий(26%),Bestial - Звірячий(26%),Elemental - Елементальний(21%),Cerulean - Блакитний ?(21%)
+JaCkky,Brawny - М’язистий(46%),Dashing - Елегантний ?(43%),Elemental - Елементальний(25%),Cerulean - Блакитний ?(25%),Virtuoso - Віртуозний ?(25%),Otherwordly - Потойбічний(18%)
+Wisper,Hirsute - Кошлатий(70%),Coveted - Жаданий(32%),Brawny - М’язистий(46%),Crimson - Керамзиновий(38%),Balanced - Урівноважений(27%),Canny - Кмітливий(27%),Elemental - Елементальний(24%)
+Ame,Dashing - Елегантний ?(62%),Sacrificial - Жертовний(58%),Virtuoso - Віртуозний ?(38%),Otherwordly - Потойбічний(30%),Hirsute - Кошлатий(26%)
+Crystallis,Dashing - Елегантний ?(43%),Brawny - М’язистий(39%),Hirsute - Кошлатий(24%),Elemental - Елементальний(19%),Otherwordly - Потойбічний(19%)
+bzm,Virtuoso - Віртуозний ?(72%),Canny - Кмітливий(48%),Otherwordly - Потойбічний(39%),Bestial - Звірячий(37%),Crimson - Керамзиновий(34%),Elemental - Елементальний(31%),Hirsute - Кошлатий(30%)
+kiyotaka,Sacrificial - Жертовний(56%),Otherwordly - Потойбічний(50%),Canny - Кмітливий(46%),Bestial - Звірячий(41%),Dashing - Елегантний ?(35%),Cerulean - Блакитний ?(35%)
+4nalog,Hirsute - Кошлатий(51%),Sacrificial - Жертовний(49%),Virtuoso - Віртуозний ?(43%),Dashing - Елегантний ?(38%),Otherwordly - Потойбічний(35%),Bestial - Звірячий(32%),Crimson - Керамзиновий(30%)
+Larl,Otherwordly - Потойбічний(62%),Dashing - Елегантний ?(43%),Hirsute - Кошлатий(38%),Canny - Кмітливий(38%),Crimson - Керамзиновий(36%),Sacrificial - Жертовний(36%),Elemental - Елементальний(31%)
+Mac,Balanced - Урівноважений(60%),Sacrificial - Жертовний(50%),Otherwordly - Потойбічний(40%),Crimson - Керамзиновий(30%),Elemental - Елементальний(20%),Virtuoso - Віртуозний ?(20%)
+Marl1ne,Virtuoso - Віртуозний ?(74%),Crimson - Керамзиновий(52%),Hirsute - Кошлатий(44%),Bestial - Звірячий(41%),Brawny - М’язистий(30%)
+gpk,Otherwordly - Потойбічний(45%),Canny - Кмітливий(39%),Elemental - Елементальний(35%),Cerualean(33%),Hirsute - Кошлатий(33%),Bestial - Звірячий(33%)
+Nisha,Otherwordly - Потойбічний(59%),Sacrificial - Жертовний(41%),Hirsute - Кошлатий(39%),Crimson - Керамзиновий(35%),Canny - Кмітливий(33%),Dashing - Елегантний ?(29%),Bestial - Звірячий(29%),Elemental - Елементальний(27%),Cerulean - Блакитний ?(25%)
+No[o]ne,Virtuoso - Віртуозний ?(55%),Otherwordly - Потойбічний(51%),Canny - Кмітливий(42%),Bestial - Звірячий(40%),Cerulean - Блакитний ?(35%),Hirsute - Кошлатий(33%),Crimson - Керамзиновий(31%)
+Niku,Sacrificial - Жертовний(63%),Virtuoso - Віртуозний ?(53%),Brawny - М’язистий(53%),Cerulean - Блакитний ?(26%),Dashing - Елегантний ?(21%),Otherwordly - Потойбічний(21%)
+RCY,Hirsute - Кошлатий(41%),Otherwordly - Потойбічний(38%),Canny - Кмітливий(38%),Coveted - Жаданий(33%),Cerulean - Блакитний ?(28%),Bestial - Звірячий(28%),Brawny - М’язистий(26%)
+Quinn,Virtuoso - Віртуозний ?(87%),Canny - Кмітливий(49%),Otherwordly - Потойбічний(44%),Bestial - Звірячий(43%),Cerulean - Блакитний ?(34%),Hirsute - Кошлатий(34%),Dashing - Елегантний ?(33%)
+NothingToSay,Hirsute - Кошлатий(57%),Virtuoso - Віртуозний ?(36%),Crimson - Керамзиновий(34%),Canny - Кмітливий(34%),Otherwordly - Потойбічний(32%),Brawny - М’язистий(26%),Bestial - Звірячий(26%)
+SumaiL,Hirsute - Кошлатий(49%),Sacrificial - Жертовний(47%),Balanced - Урівноважений(38%),Canny - Кмітливий(36%),Cerualean(34%),Bestial - Звірячий(34%),Otherwordly - Потойбічний(32%)
+Xm,Otherwordly - Потойбічний(51%),Hirsute - Кошлатий(39%),Canny - Кмітливий(41%),Virtuoso - Віртуозний ?(39%),Cerulean - Блакитний ?(35%),Balanced - Урівноважений(23%)
+Armel,Virtuoso - Віртуозний ?(79%),Otherwordly - Потойбічний(57%),Canny - Кмітливий(43%),Bestial - Звірячий(39%),Crimson - Керамзиновий(32%),Elemental - Елементальний(29%),Hirsute - Кошлатий(29%)
+Mira,Canny - Кмітливий(58%),Elemental - Елементальний(27%),Hirsute - Кошлатий(24%),Bestial - Звірячий(22%),Emerald - Смарагдовий(20%),Brawny - М’язистий(18%)
+KJ,Elemental - Елементальний(39%),Brawny - М’язистий(43%),Crimson - Керамзиновий(35%),Canny - Кмітливий(32%),Bestial - Звірячий(30%),Coveted - Жаданий(16%),Sacrificial - Жертовний(16%)
+Scofield,Canny - Кмітливий(51%),Brawny - М’язистий(41%),Hirsute - Кошлатий(30%),Bestial - Звірячий(27%),Coveted - Жаданий(24%),Emerald - Смарагдовий(16%),Crimson - Керамзиновий(14%)
+rue,Canny - Кмітливий(55%),Emerald - Смарагдовий(39%),Dashing - Елегантний ?(30%),Cerulean - Блакитний ?(23%),Otherwordly - Потойбічний(23%),Elemental - Елементальний(20%),Hirsute - Кошлатий(20%)
+Sneyking,Coveted - Жаданий(85%),Canny - Кмітливий(59%),Elemental - Елементальний(44%),Bestial - Звірячий(37%),Emerald - Смарагдовий(33%),Otherwordly - Потойбічний(30%),Cerulean - Блакитний ?(26%)
+Miposhka,Coveted - Жаданий(75%),Canny - Кмітливий(66%),Crimson - Керамзиновий(32%),Hirsute - Кошлатий(23%),Elemental - Елементальний(20%),Balanced - Урівноважений(20%)
+tofu,Canny - Кмітливий(59%),Emerald - Смарагдовий(43%),Coveted - Жаданий(33%),Balanced - Урівноважений(33%),Elemental - Елементальний(18%),Bestial - Звірячий(18%)
+XinQ,Canny - Кмітливий(55%),Emerald - Смарагдовий(30%),Hirsute - Кошлатий(30%),Brawny - М’язистий(27%),Bestial - Звірячий(25%),Coveted - Жаданий(18%)
+Boxi,Canny - Кмітливий(41%),Balanced - Урівноважений(39%),Emerald - Смарагдовий(35%),Elemental - Елементальний(29%),Coveted - Жаданий(24%),Bestial - Звірячий(22%)
+Tims,Brawny - М’язистий(36%),Elemental - Елементальний(29%),Canny - Кмітливий(29%),Dashing - Елегантний ?(25%),Hirsute - Кошлатий(25%),Crimson - Керамзиновий(25%),Sacrificial - Жертовний(21%)
+OmaR,Canny - Кмітливий(51%),Balanced - Урівноважений(36%),Elemental - Елементальний(30%),Bestial - Звірячий(28%),Crimson - Керамзиновий(26%),Elemrald(23%)
+Bignum,Elemental - Елементальний(38%),Canny - Кмітливий(33%),Balanced - Урівноважений(31%),Brawny - М’язистий(28%),Hirsute - Кошлатий(28%),Sacrificial - Жертовний(21%),
+Whitemon,Canny - Кмітливий(66%),Emerald - Смарагдовий(31%),Sacrificial - Жертовний(25%),Hirsute - Кошлатий(24%),Crisom(21%),Virtuoso - Віртуозний ?(19%)
+9Class,Canny - Кмітливий(38%),Emerald - Смарагдовий(27%),Balanced - Урівноважений(27%),Crimson - Керамзиновий(27%),Coveted - Жаданий(25%),Sacrificial - Жертовний(24%),Elemental - Елементальний(22%)
+Cr1t-,Canny - Кмітливий(59%),Virtuoso - Віртуозний ?(44%),Sacrificial - Жертовний(44%),Emerald - Смарагдовий(26%),Hirsute - Кошлатий(26%)
+Saksa,Brawny - М’язистий(43%),Canny - Кмітливий(34%),Hirsute - Кошлатий(28%),Elemental - Елементальний(22%),Bestial - Звірячий(18%),Emerald - Смарагдовий(16%)
+Zayac,Hirsute - Кошлатий(53%),Canny - Кмітливий(53%),Bestial - Звірячий(37%),Balanced - Урівноважений(32%),Crimson - Керамзиновий(26%),Emerald - Смарагдовий(21%)
+Erice,Virtuoso - Віртуозний ?(60%),Canny - Кмітливий(50%),Dashing - Елегантний ?(40%),Sacrificial - Жертовний(20%)
+Save,Canny - Кмітливий(70%),Virtuoso - Віртуозний ?(33%),Otherwordly - Потойбічний(33%),Emerald - Смарагдовий(30%),Balanced - Урівноважений(29%),Coveted - Жаданий(18%)
+GH,Brawny - М’язистий(55%),Bestial - Звірячий(36%),Elemental - Елементальний(34%),Coveted - Жаданий(32%),Hirsute - Кошлатий(28%),Emerald - Смарагдовий(19%),Balanced - Урівноважений(19%),Canny - Кмітливий(19%)
+Dukalis,Canny - Кмітливий(71%),Virtuoso - Віртуозний ?(51%),Crimson - Керамзиновий(25%),Elemental - Елементальний(20%),Sacrificial - Жертовний(20%),Cerulean - Блакитний ?(18%)
+panto,Canny - Кмітливий(60%),Elemental - Елементальний(35%),Crimson - Керамзиновий(35%),Balanced - Урівноважений(33%),Hirsute - Кошлатий(27%),Virtuoso - Віртуозний ?(24%),Emerald - Смарагдовий(22%)
+planet,Canny - Кмітливий(47%),Crimson - Керамзиновий(30%),Brawny - М’язистий(28%),Elemental - Елементальний(26%),Balanced - Урівноважений(25%),Emerald - Смарагдовий(23%),Hirsute - Кошлатий(23%),Bestial - Звірячий(21%)`;
 
     function parsePrefixCSV(text){
-      const lines = text.trim().split(/\n/);
-      const data = {};
-      for(const line of lines){
-        const parts = line.split(',');
-        const player = parts[0];
-        data[player] = {};
-        for(let i=1;i<parts.length;i++){
-          const m = parts[i].match(/^(\w+)\((\d+)%\)$/);
-          if(m) data[player][m[1]] = parseFloat(m[2]);
-        }
+  // Split lines, ignore empty lines
+  const lines = text.trim().split(/\r?\n/).filter(l => l.trim().length);
+  const data = {};
+  for(const line of lines){
+    const parts = line.split(',').map(p => p.trim()).filter(p => p.length);
+    if(parts.length === 0) continue;
+    const player = parts[0];
+    data[player] = {};
+    // Accept any prefix name that doesn't contain parentheses
+    for(let i=1;i<parts.length;i++){
+      const chunk = parts[i].trim();
+      // Match "prefixName(123%)" -- capture any chars except parentheses for name
+      const m = chunk.match(/^([^()]+)\((\d+)%\)$/u);
+      if(m){
+        const name = m[1].trim();
+        const chance = parseFloat(m[2]);
+        if(name) data[player][name] = chance;
+      } else {
+        // if you want, keep unmatched chunks for debugging:
+        // console.warn('Unparsed prefix chunk:', {player, chunk});
       }
-      return data;
     }
+  }
+  return data;
+}
+
 
     const prefixData = parsePrefixCSV(prefixCSV);
 
@@ -432,8 +518,8 @@ planet,Canny(47%),Crimson(30%),Brawny(28%),Elemental(26%),Balanced(25%),Emerald(
     const grand = { Core:{a:0,m:0}, Mid:{a:0,m:0}, Support:{a:0,m:0} };
 
     document.addEventListener('role:updated', (e)=>{
-      const {role, sumAvg, sumMax} = e.detail;
-      if(grand[role]){ grand[role].a = sumAvg; grand[role].m = sumMax; }
+      const {role, sumAvg, Sumax} = e.detail;
+      if(grand[role]){ grand[role].a = sumAvg; grand[role].m = Sumax; }
       const totAvg = Object.values(grand).reduce((t,o)=>t+o.a,0);
       const totMax = Object.values(grand).reduce((t,o)=>t+o.m,0);
       gtAvg.textContent = fmt(totAvg);
